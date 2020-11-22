@@ -1,6 +1,7 @@
 module NewtonPolygon
   ( qualifiedMonomies
   , ppNewton
+  , ppNewtonL
   , ppList
   ) where
 import           Data.List
@@ -24,6 +25,7 @@ import qualified Data.Text.Prettyprint.Doc     as Pretty
 type Bound = Int
 type Signature = Int
 type Mono = [Int] -- ^ Mono is a list of three integers (x_1, x_2, x_3) 
+type MonoSig = (Mono, [Signature])
 type Moduli = Int
 type Orbit = S.Set Int -- ^ Integers that lie in the same orbit mod bound
 type Slope = Ratio Int
@@ -34,8 +36,8 @@ extractFracPart denom num =
   let x = (fromIntegral num) / (fromIntegral denom)
   in  x - (fromIntegral . floor) x
 
-findMonomies :: Bound -> Int -> [Mono] -- ^ find triples that satisfied x_1 <= x_2 <= x3 <= bound, gcd(x_1, x_2, x_3, m) = 1 and x_1 + x_2 + x_3 = sum
-findMonomies bound sum = filter
+findMonoA :: Bound -> Int -> [Mono] -- ^ find triples that satisfied x_1 <= x_2 <= x3 <= bound, gcd(x_1, x_2, x_3, m) = 1 and x_1 + x_2 + x_3 = sum
+findMonoA bound sum = filter
   (\[x1, x2, x3] -> x1 + x2 + x3 == sum && gcd x1 (gcd x2 (gcd x3 bound)) == 1)
   [ [x1, x2, x3]
   | x1 <- [1 .. bound]
@@ -43,11 +45,23 @@ findMonomies bound sum = filter
   , x3 <- [x2 .. (max bound (sum - x1 - x2))]
   ]
 
+findMonoB :: Bound -> Int -> [Mono]
+findMonoB bound sum = filter
+  (\[x1, x2, x3, x4] ->
+    x1 + x2 + x3 + x4 == sum && gcd x1 (gcd x2 (gcd x3 (gcd x4 bound))) == 1
+  )
+  [ [x1, x2, x3, x4]
+  | x1 <- [1 .. bound]
+  , x2 <- [x1 .. (max bound (sum - x1))]
+  , x3 <- [x2 .. (max bound (sum - x1 - x2))]
+  , x4 <- [x2 .. (max bound (sum - x1 - x2 - x3))]
+  ]
+
 sign :: Bound -> Mono -> Int -> Signature -- ^ range of n is [1..m-1] 
 sign bound monomies n =
   (round . sum) ((extractFracPart bound) <$> (((*) (-n)) <$> monomies)) - 1
 
-qualifiedMonomies :: Bound -> [((Mono, [Signature]), (Mono, [Signature]))]
+qualifiedMonomies :: Bound -> [(MonoSig, MonoSig)]
 qualifiedMonomies bound = do
   a <- ma
   b <- mb
@@ -55,22 +69,15 @@ qualifiedMonomies bound = do
       sb = sign bound b <$> [1 .. (bound - 1)] -- ^ compute signature function for each B 
   if valid bound sa sb then d ++ [((a, sa), (b, sb))] else d
  where
-  ma = findMonomies bound bound -- ^ list of monomies A = [ a1, a2, a3 ] such that a1 <= a2 <= a3 <= m and a1 + a2 + a3 = m
-  mb = findMonomies bound (2 * bound) -- ^ list of monomies B = [ b1, b2, b3 ] such that b1 <= b2 <= b3 <= m and b1 + b2 + b3 = 2m
+  ma = findMonoA bound bound -- ^ list of monomies A = [ a1, a2, a3 ] such that a1 <= a2 <= a3 <= m and a1 + a2 + a3 = m
+  mb = findMonoB bound (2 * bound) -- ^ list of monomies B = [ b1, b2, b3 ] such that b1 <= b2 <= b3 <= m and b1 + b2 + b3 = 2m
   d  = []
 
 valid :: Bound -> [Signature] -> [Signature] -> Bool -- ^ check condition f(A,1)f(B,m-1)=1 && f(a,x)f(B,m-x)=0
 valid bound sa sb =
-  if (sa !! 0)
-     *  (sb !! (bound - 2))
-     == 1
-     && (and
-          [ (sa !! x) * (sb !! (bound - 2 - x)) == 0 | x <- [1 .. (bound - 3)] ]
-        )
-  then
-    True
-  else
-    False
+  if sum [ (sa !! x) * (sb !! (bound - 2 - x)) | x <- [0 .. (bound - 2)] ] == 1
+    then True
+    else False
 
 partitionOrb :: Bound -> [(S.Set Orbit, Moduli)]
 partitionOrb bound = do
@@ -79,28 +86,36 @@ partitionOrb bound = do
     (return (process bound moduli [1 .. (bound - 1)] (S.empty) S.empty moduli))
     (return moduli)
 
+computeSlopeA :: [Signature] -> Orbit -> Newton
+computeSlopeA sig = computeSlopeGen (\x -> sig !! (x - 1) == 1) sig
 
-computeSlope :: (Mono, [Signature]) -> Orbit -> (Orbit, Slope)
-computeSlope (_, sig) orbit =
-  let l = filter (\x -> sig !! (x - 1) == 1) lorbit
-  in  (orbit, (length l) % (length lorbit))
-  where lorbit = S.toList orbit
+computeSlopeB :: [Signature] -> Orbit -> Newton
+computeSlopeB sig = computeSlopeGen (\x -> sig !! (x - 1) /= 0) sig
+
+computeSlopeGen :: (Int -> Bool) -> [Signature] -> Orbit -> Newton
+computeSlopeGen f sig orb =
+  let l = filter f (S.toList orb) in (orb, (length l) % (S.size orb))
+
+slope
+  :: MonoSig
+  -> MonoSig
+  -> [(S.Set Orbit, [Moduli])]
+  -> [([Moduli], [Newton], [Newton])]
+slope msa msb partitions = do
+  (orbits, moduli) <- partitions
+  let newtona = computeSlopeA (snd msa) <$> (S.toList orbits)
+      newtonb = computeSlopeB (snd msb) <$> (S.toList orbits)
+  return (moduli, newtona, newtonb)
 
 computeNewton
-  :: Bound
-  -> [ ( [Moduli]
-       , ((Mono, [Signature]), [(Orbit, Slope)])
-       , ((Mono, [Signature]), [(Orbit, Slope)])
-       )
-     ]
+  :: Bound -> [(MonoSig, MonoSig, [([Moduli], [Newton], [Newton])])]
 computeNewton bound = do
-  (a     , b     ) <- qualifiedMonomies bound
-  (orbits, moduli) <- toMM (partitionOrb bound)
-  return
-    ( moduli
-    , (a, computeSlope a <$> (S.toList orbits))
-    , (b, computeSlope b <$> (S.toList orbits))
-    )
+  (a, b) <- monomies
+  let sab = slope a b partitions
+  return (a, b, sab)
+ where
+  partitions = toMM (partitionOrb bound)
+  monomies   = qualifiedMonomies bound
 
 toMM :: [(S.Set Orbit, Moduli)] -> [(S.Set Orbit, [Moduli])]
 toMM a = (MM.assocs . MM.fromList) a
@@ -120,44 +135,34 @@ ppNewton bound =
   in  "m ="
         <+> Pretty.pretty bound
         <>  Pretty.hardline
-        <>  (Pretty.hcat) (ppElem <$> l)
-        <>  Pretty.hardline
+        <>  ppListGen (ppElem <$> l) Pretty.hardline
 
-ppElem
-  :: ( [Moduli]
-     , ((Mono, [Signature]), [Newton])
-     , ((Mono, [Signature]), [Newton])
-     )
-  -> Doc a
-ppElem x@(mods, moa, mob) =
-  ppMono x
-    <>  "p ="
-    <+> ppList (pretty <$> mods)
-    <>  Pretty.colon
-    <>  Pretty.hardline
-    <>  "A"
-    <>  Pretty.colon
-    <+> ppList (ppObs <$> (snd moa))
-    <>  Pretty.hardline
-    <>  "B"
-    <>  Pretty.colon
-    <+> ppList (ppObs <$> (snd mob))
-    <>  Pretty.hardline
+ppNewtonL :: [Bound] -> Doc a
+ppNewtonL bounds = ppListGen (ppNewton <$> bounds) Pretty.hardline
 
-ppMono
-  :: ( [Moduli]
-     , ((Mono, [Signature]), [Newton])
-     , ((Mono, [Signature]), [Newton])
-     )
-  -> Doc a
-ppMono (_, moa, mob) =
+ppElem :: (MonoSig, MonoSig, [([Moduli], [Newton], [Newton])]) -> Doc a
+ppElem (a, b, nt) =
   "A ="
-    <+> ppMonoSig (fst moa)
-    <>  Pretty.comma
-    <+> "B = "
-    <>  ppMonoSig (fst mob)
+    <+> ppMonoSig a
+    <>  Pretty.hardline
+    <>  "B ="
+    <+> ppMonoSig b
+    <>  Pretty.hardline
+    <>  ppListGen (ppMObs <$> nt) Pretty.hardline
     <>  Pretty.hardline
 
+ppMObs :: ([Moduli], [Newton], [Newton]) -> Doc a
+ppMObs (mods, nta, ntb) =
+  "p ="
+    <+> ppList (Pretty.pretty <$> mods)
+    <>  Pretty.hardline
+    <>  "a"
+    <>  Pretty.colon
+    <+> ppList (ppObs <$> nta)
+    <>  Pretty.hardline
+    <>  "b"
+    <>  Pretty.colon
+    <+> ppList (ppObs <$> ntb)
 
 ppMonoSig :: (Mono, [Signature]) -> Doc a
 ppMonoSig (mono, sig) =
@@ -176,5 +181,7 @@ ppListBrac :: (Doc a -> Doc a) -> [Doc a] -> Doc a
 ppListBrac f li = (f . Pretty.hcat) (intersperse Pretty.comma li)
 
 ppList :: [Doc a] -> Doc a
-ppList li = (Pretty.hcat (intersperse Pretty.comma li))
+ppList li = ppListGen li Pretty.comma
 
+ppListGen :: [Doc a] -> Doc a -> Doc a
+ppListGen li sep = (Pretty.hcat (intersperse sep li))
