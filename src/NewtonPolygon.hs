@@ -41,8 +41,8 @@ findMonoA bound sum = filter
   (\[x1, x2, x3] -> x1 + x2 + x3 == sum && gcd x1 (gcd x2 (gcd x3 bound)) == 1)
   [ [x1, x2, x3]
   | x1 <- [1 .. bound]
-  , x2 <- [x1 .. (max bound (sum - x1))]
-  , x3 <- [x2 .. (max bound (sum - x1 - x2))]
+  , x2 <- [x1 .. (min bound (sum - x1))]
+  , x3 <- [x2 .. (min bound (sum - x1 - x2))]
   ]
 
 findMonoB :: Bound -> Int -> [Mono]
@@ -52,9 +52,9 @@ findMonoB bound sum = filter
   )
   [ [x1, x2, x3, x4]
   | x1 <- [1 .. bound]
-  , x2 <- [x1 .. (max bound (sum - x1))]
-  , x3 <- [x2 .. (max bound (sum - x1 - x2))]
-  , x4 <- [x2 .. (max bound (sum - x1 - x2 - x3))]
+  , x2 <- [x1 .. (min bound (sum - x1))]
+  , x3 <- [x2 .. (min bound (sum - x1 - x2))]
+  , x4 <- [x3 .. (min bound (sum - x1 - x2 - x3))]
   ]
 
 sign :: Bound -> Mono -> Int -> Signature -- ^ range of n is [1..m-1] 
@@ -79,24 +79,24 @@ valid bound sa sb =
     then True
     else False
 
-partitionOrb :: Bound -> [(S.Set Orbit, Moduli)]
+partitionOrb :: Bound -> [(S.Set Orbit, Moduli)] -- ^ given the bound, find possible partitioning 
 partitionOrb bound = do
   moduli <- filter (\x -> gcd x bound == 1) [1 .. (bound - 1)]
   zip
     (return (process bound moduli [1 .. (bound - 1)] (S.empty) S.empty moduli))
     (return moduli)
 
-computeSlopeA :: [Signature] -> Orbit -> Newton
+computeSlopeA :: [Signature] -> Orbit -> Newton -- function to compute slope of MonoA
 computeSlopeA sig = computeSlopeGen (\x -> sig !! (x - 1) == 1) sig
 
-computeSlopeB :: [Signature] -> Orbit -> Newton
+computeSlopeB :: [Signature] -> Orbit -> Newton -- function to compute slope of MonoB
 computeSlopeB sig = computeSlopeGen (\x -> sig !! (x - 1) /= 0) sig
 
 computeSlopeGen :: (Int -> Bool) -> [Signature] -> Orbit -> Newton
-computeSlopeGen f sig orb =
+computeSlopeGen f _ orb =
   let l = filter f (S.toList orb) in (orb, (length l) % (S.size orb))
 
-slope
+slope -- ^ find slope of monoA and monoB
   :: MonoSig
   -> MonoSig
   -> [(S.Set Orbit, [Moduli])]
@@ -129,7 +129,7 @@ process bound moduli li orbit lorb cur = if elem cur li
   else process bound moduli li S.empty (S.insert orbit lorb) (head li)
   where e = (cur * moduli) `mod` bound
 
-ppNewton :: Bound -> Doc a
+ppNewton :: Bound -> Doc a -- ^ pretty printing newton polygon
 ppNewton bound =
   let l = computeNewton bound
   in  "m ="
