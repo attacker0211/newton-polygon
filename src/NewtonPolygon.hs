@@ -13,6 +13,7 @@ import           Data.Text.Prettyprint.Doc      ( Pretty(..)
                                                 , (<+>)
                                                 )
 import qualified Data.Text.Prettyprint.Doc     as Pretty
+import           Control.Monad
 
 -- data Mono = M
 --   { nbranches :: {-# UNPACK #-} !Int -- ^ Number of branches (default: 3)
@@ -36,26 +37,20 @@ extractFracPart denom num =
   let x = (fromIntegral num) / (fromIntegral denom)
   in  x - (fromIntegral . floor) x
 
+findMonoGen :: Int -> Bound -> Int -> [Mono]
+findMonoGen numElems bound su = filter
+  (\li -> sum li == su && foldl gcd bound li == 1)
+  (fst <$> (foldM find ([], 0) [1 .. numElems]))
+ where
+  find ([], su') _ = [1 .. (bound - 1)] >>= \x -> pure ([x], su' + x)
+  find (l, su') _ =
+    [last l .. min (su - su') (bound - 1)] >>= \x -> pure (l ++ [x], su' + x)
+
 findMonoA :: Bound -> Int -> [Mono] -- ^ find triples that satisfied x_1 <= x_2 <= x3 <= bound, gcd(x_1, x_2, x_3, m) = 1 and x_1 + x_2 + x_3 = sum
-findMonoA bound sum = filter
-  (\[x1, x2, x3] -> x1 + x2 + x3 == sum && gcd x1 (gcd x2 (gcd x3 bound)) == 1)
-  [ [x1, x2, x3]
-  | x1 <- [1 .. bound]
-  , x2 <- [x1 .. (min bound (sum - x1))]
-  , x3 <- [x2 .. (min bound (sum - x1 - x2))]
-  ]
+findMonoA bound su = findMonoGen 3 bound su
 
 findMonoB :: Bound -> Int -> [Mono]
-findMonoB bound sum = filter
-  (\[x1, x2, x3, x4] ->
-    x1 + x2 + x3 + x4 == sum && gcd x1 (gcd x2 (gcd x3 (gcd x4 bound))) == 1
-  )
-  [ [x1, x2, x3, x4]
-  | x1 <- [1 .. bound]
-  , x2 <- [x1 .. (min bound (sum - x1))]
-  , x3 <- [x2 .. (min bound (sum - x1 - x2))]
-  , x4 <- [x3 .. (min bound (sum - x1 - x2 - x3))]
-  ]
+findMonoB bound su = findMonoGen 4 bound su
 
 sign :: Bound -> Mono -> Int -> Signature -- ^ range of n is [1..m-1] 
 sign bound monomies n =
@@ -69,8 +64,8 @@ qualifiedMonomies bound = do
       sb = sign bound b <$> [1 .. (bound - 1)] -- ^ compute signature function for each B 
   if valid bound sa sb then d ++ [((a, sa), (b, sb))] else d
  where
-  ma = findMonoA bound bound -- ^ list of monomies A = [ a1, a2, a3 ] such that a1 <= a2 <= a3 <= m and a1 + a2 + a3 = m
-  mb = findMonoB bound (2 * bound) -- ^ list of monomies B = [ b1, b2, b3 ] such that b1 <= b2 <= b3 <= m and b1 + b2 + b3 = 2m
+  ma = findMonoA bound bound -- ^ list of monomies A = [ a1, a2, a3 ] such that a1 <= a2 <= a3 < m and sum a_i = m
+  mb = findMonoB bound (2 * bound) -- ^ list of monomies B = [ b1, b2, b3 ] such that b1 <= b2 <= b3 < m and sum b_i= 2m
   d  = []
 
 valid :: Bound -> [Signature] -> [Signature] -> Bool -- ^ check condition f(A,1)f(B,m-1)=1 && f(a,x)f(B,m-x)=0
