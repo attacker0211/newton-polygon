@@ -1,176 +1,232 @@
+{-# LANGUAGE TemplateHaskell #-}
+
 module NewtonPolygon
   ( qualifiedMonomies
   , ppNewton
   , ppNewtonL
-  , ppList
   ) where
 import           Data.List
 import qualified Data.MultiMap                 as MM
+import qualified Data.Map                      as M
 import           Data.Ratio
 import qualified Data.Set                      as S
+import           Data.Text                      ( Text )
 import           Data.Text.Prettyprint.Doc      ( Pretty(..)
                                                 , Doc
                                                 , (<+>)
                                                 )
 import qualified Data.Text.Prettyprint.Doc     as Pretty
-import           Control.Monad
+import           Control.Monad                  ( foldM )
+import           Control.Lens
 
--- data Mono = M
---   { nbranches :: {-# UNPACK #-} !Int -- ^ Number of branches (default: 3)
---   , sum       :: {-# UNPACK #-} !Int -- ^ Sum of ramies 
---   , bound     :: {-# UNPACK #-} !Int -- ^ Bound of each rami
---   , ramies    :: [Int] -- ^ Content of monodromy a
---   }
---   deriving Generic
-
-type Bound = Int
-type Signature = Int
-type Mono = [Int] -- ^ Mono is a list of three integers (x_1, x_2, x_3) 
-type MonoSig = (Mono, [Signature])
-type Moduli = Int
-type Orbit = S.Set Int -- ^ Integers that lie in the same orbit mod bound
+type Orbit = S.Set Int
 type Slope = Ratio Int
-type Newton = (Orbit, Slope)
+
+data Monodromy = Monodromy
+  { _name      :: {-# UNPACK #-} !Text
+  , _bound     :: {-# UNPACK #-} !Int
+  , _ramies    :: [Int] -- ^ content of monodromy
+  , _signature :: [Int] -- ^ signature of monodromy: len list (bound-1)
+  }
+
+data Partition = Partition
+  { _orbit :: [Orbit]
+  , _mods  :: [Int]
+  }
+
+data DualS = DualS
+  { _slopeA :: [Slope]
+  , _slopeB :: [Slope]
+  , _par    :: Partition
+  }
+
+data DualMono = DualMono
+  { _monoA :: Monodromy
+  , _monoB :: Monodromy
+  , _obs   :: [DualS]
+  }
+
+$(makeLenses ''Monodromy)
+$(makeLenses ''Partition)
+$(makeLenses ''DualS)
+$(makeLenses ''DualMono)
 
 extractFracPart :: Int -> Int -> Double
 extractFracPart denom num =
   let x = (fromIntegral num) / (fromIntegral denom)
   in  x - (fromIntegral . floor) x
 
-findMonoGen :: Int -> Bound -> Int -> [Mono]
-findMonoGen numElems bound su = filter
+findRamyGen
+  :: Int {-numBranch-}
+  -> Int {-bound-}
+  -> Int {-sum-}
+  -> [[Int]] {-ramies-}
+findRamyGen nbr bound su = filter
   (\li -> sum li == su && foldl gcd bound li == 1)
-  (fst <$> (foldM find ([], 0) [1 .. numElems]))
+  (fst <$> (foldM find ([], 0) [1 .. nbr]))
  where
   find ([], su') _ = [1 .. (bound - 1)] >>= \x -> pure ([x], su' + x)
   find (l, su') _ =
     [last l .. min (su - su') (bound - 1)] >>= \x -> pure (l ++ [x], su' + x)
 
-findMonoA :: Bound -> Int -> [Mono] -- ^ find triples that satisfied x_1 <= x_2 <= x3 <= bound, gcd(x_1, x_2, x_3, m) = 1 and x_1 + x_2 + x_3 = sum
-findMonoA bound su = findMonoGen 3 bound su
+sign
+  :: Int {-bound-}
+  -> [Int] {-ramies-}
+  -> Int {-given n, range of n is [1..m-1]-}
+  -> Int {-signature-}
+sign bound ramies n =
+  (round . sum) ((extractFracPart bound) <$> (((*) (-n)) <$> ramies)) - 1
 
-findMonoB :: Bound -> Int -> [Mono]
-findMonoB bound su = findMonoGen 4 bound su
-
-sign :: Bound -> Mono -> Int -> Signature -- ^ range of n is [1..m-1] 
-sign bound monomies n =
-  (round . sum) ((extractFracPart bound) <$> (((*) (-n)) <$> monomies)) - 1
-
-qualifiedMonomies :: Bound -> [(MonoSig, MonoSig)]
-qualifiedMonomies bound = do
-  a <- ma
-  b <- mb
-  let sa = sign bound a <$> [1 .. (bound - 1)] -- ^ compute signature function for each A
-      sb = sign bound b <$> [1 .. (bound - 1)] -- ^ compute signature function for each B 
-  if valid bound sa sb then d ++ [((a, sa), (b, sb))] else d
+qualifiedMonomies
+  :: Int {-numbranchA-}
+  -> Int {-numBranchB-}
+  -> Int {-sumA-}
+  -> Int {-sumB-}
+  -> Int {-bound-}
+  -> [(Monodromy, Monodromy)]
+qualifiedMonomies na nb sa sb bound = do
+  ra <- ramA
+  rb <- ramB
+  let ma = Monodromy "A" bound ra (sign bound ra <$> [1 .. (bound - 1)])
+      mb = Monodromy "B" bound rb (sign bound rb <$> [1 .. (bound - 1)])
+  if valid ma mb then d ++ [(,) ma mb] else d
  where
-  ma = findMonoA bound bound -- ^ list of monomies A = [ a1, a2, a3 ] such that a1 <= a2 <= a3 < m and sum a_i = m
-  mb = findMonoB bound (2 * bound) -- ^ list of monomies B = [ b1, b2, b3 ] such that b1 <= b2 <= b3 < m and sum b_i= 2m
-  d  = []
+  ramA = findRamyGen na bound sa
+  ramB = findRamyGen nb bound sb
+  d    = []
 
-valid :: Bound -> [Signature] -> [Signature] -> Bool -- ^ check condition f(A,1)f(B,m-1)=1 && f(a,x)f(B,m-x)=0
-valid bound sa sb =
-  if sum [ (sa !! x) * (sb !! (bound - 2 - x)) | x <- [0 .. (bound - 2)] ] == 1
-    then True
-    else False
+valid :: Monodromy -> Monodromy -> Bool
+valid monoA monoB =
+  let b  = monoA ^. bound
+      sa = monoA ^. signature
+      sb = monoB ^. signature
+  in  sum [ (sa !! x) * (sb !! (b - 2 - x)) | x <- [0 .. (b - 2)] ] == 1
 
-partitionOrb :: Bound -> [(S.Set Orbit, Moduli)] -- ^ given the bound, find possible partitioning 
-partitionOrb bound = do
-  moduli <- filter (\x -> gcd x bound == 1) [1 .. (bound - 1)]
-  zip
-    (return (process bound moduli [1 .. (bound - 1)] (S.empty) S.empty moduli))
-    (return moduli)
+{-given the bound, find possible partitioning-}
+partitionM :: Int -> MM.MultiMap (S.Set Orbit) Int
+partitionM b =
+  let mods = filter (\x -> gcd x b == 1) [1 .. b - 1]
+  in  (foldr (\x -> MM.insert (process b x [1 .. b - 1] S.empty S.empty x) x)
+             MM.empty
+             mods
+      )
+ where
+  process _ _ [] orbit lorb _ =
+    if orbit == S.empty then lorb else S.insert orbit lorb
+  process bound modulo li orbit lorb cur = if elem cur li
+    then process bound
+                 modulo
+                 (delete cur li)
+                 (S.insert cur orbit)
+                 lorb
+                 ((cur * modulo) `mod` bound)
+    else process bound modulo li S.empty (S.insert orbit lorb) (head li)
 
-computeSlopeA :: [Signature] -> Orbit -> Newton -- function to compute slope of MonoA
+toPartition :: MM.MultiMap (S.Set Orbit) Int -> [Partition]
+toPartition mm =
+  M.foldrWithKey (\k x xs -> (Partition (S.toList k) x) : xs) [] (MM.toMap mm)
+
+computeSlopeGen
+  :: (Int -> Bool)
+  -> [Int] {-signature-}
+  -> Orbit
+  -> Slope
+computeSlopeGen f _ orb =
+  let l = filter f (S.toList orb) in (length l) % (S.size orb)
+
+computeSlopeA :: [Int] -> Orbit -> Slope
 computeSlopeA sig = computeSlopeGen (\x -> sig !! (x - 1) == 1) sig
 
-computeSlopeB :: [Signature] -> Orbit -> Newton -- function to compute slope of MonoB
+computeSlopeB :: [Int] -> Orbit -> Slope
 computeSlopeB sig = computeSlopeGen (\x -> sig !! (x - 1) /= 0) sig
 
-computeSlopeGen :: (Int -> Bool) -> [Signature] -> Orbit -> Newton
-computeSlopeGen f _ orb =
-  let l = filter f (S.toList orb) in (orb, (length l) % (S.size orb))
+computeDualS :: Monodromy -> Monodromy -> [Partition] -> [DualS]
+computeDualS ma mb partitions = do
+  par <- partitions
+  let orb = par ^. orbit
+      sa  = computeSlopeA (ma ^. signature) <$> orb
+      sb  = computeSlopeB (mb ^. signature) <$> orb
+  return (DualS sa sb par)
 
-slope -- ^ find slope of monoA and monoB
-  :: MonoSig
-  -> MonoSig
-  -> [(S.Set Orbit, [Moduli])]
-  -> [([Moduli], [Newton], [Newton])]
-slope msa msb partitions = do
-  (orbits, moduli) <- partitions
-  let newtona = computeSlopeA (snd msa) <$> (S.toList orbits)
-      newtonb = computeSlopeB (snd msb) <$> (S.toList orbits)
-  return (moduli, newtona, newtonb)
+computeDualMono
+  :: Int {-numbranchA-}
+  -> Int {-numbranchB-}
+  -> Int {-sumA-}
+  -> Int {-sumB-}
+  -> Int {-bound-}
+  -> [DualMono]
+computeDualMono na nb sa sb b = do
+  (ma, mb) <- qualifiedMonomies na nb sa sb b
+  return (DualMono ma mb (computeDualS ma mb partitions))
+  where partitions = toPartition (partitionM b)
 
-computeNewton
-  :: Bound -> [(MonoSig, MonoSig, [([Moduli], [Newton], [Newton])])]
-computeNewton bound = do
-  (a, b) <- monomies
-  let sab = slope a b partitions
-  return (a, b, sab)
- where
-  partitions = toMM (partitionOrb bound)
-  monomies   = qualifiedMonomies bound
-
-toMM :: [(S.Set Orbit, Moduli)] -> [(S.Set Orbit, [Moduli])]
-toMM a = (MM.assocs . MM.fromList) a
-
-process
-  :: Bound -> Moduli -> [Int] -> Orbit -> S.Set Orbit -> Int -> S.Set Orbit
-process _ _ [] orbit lorb _ =
-  if orbit == S.empty then lorb else S.insert orbit lorb
-process bound moduli li orbit lorb cur = if elem cur li
-  then process bound moduli (delete cur li) (S.insert cur orbit) lorb e
-  else process bound moduli li S.empty (S.insert orbit lorb) (head li)
-  where e = (cur * moduli) `mod` bound
-
-ppNewton :: Bound -> Doc a -- ^ pretty printing newton polygon
-ppNewton bound =
-  let l = computeNewton bound
+ppNewtonGen
+  :: Int {-numbranchA-}
+  -> Int {-numbranchB-}
+  -> Int {-sumA-}
+  -> Int {-sumB-}
+  -> Int {-bound-}
+  -> Doc a
+ppNewtonGen na nb sa sb b =
+  let l = computeDualMono na nb sa sb b
   in  "m ="
-        <+> Pretty.pretty bound
+        <+> Pretty.pretty b
         <>  Pretty.hardline
-        <>  ppListGen (ppElem <$> l) Pretty.hardline
+        <>  ppListGen (ppDualMono <$> l) Pretty.hardline
 
-ppNewtonL :: [Bound] -> Doc a
-ppNewtonL bounds = ppListGen (ppNewton <$> bounds) Pretty.hardline
+ppNewton :: Int -> Doc a
+ppNewton b = ppNewtonGen 3 4 b (2 * b) b
 
-ppElem :: (MonoSig, MonoSig, [([Moduli], [Newton], [Newton])]) -> Doc a
-ppElem (a, b, nt) =
-  "A ="
-    <+> ppMonoSig a
-    <>  Pretty.hardline
-    <>  "B ="
-    <+> ppMonoSig b
-    <>  Pretty.hardline
-    <>  ppListGen (ppMObs <$> nt) Pretty.hardline
-    <>  Pretty.hardline
+ppNewtonL :: [Int] -> Doc a
+ppNewtonL bds = ppListGen (ppNewton <$> bds) Pretty.hardline
 
-ppMObs :: ([Moduli], [Newton], [Newton]) -> Doc a
-ppMObs (mods, nta, ntb) =
-  "p ="
-    <+> ppList (Pretty.pretty <$> mods)
-    <>  Pretty.hardline
-    <>  "a"
-    <>  Pretty.colon
-    <+> ppList (ppObs <$> nta)
-    <>  Pretty.hardline
-    <>  "b"
-    <>  Pretty.colon
-    <+> ppList (ppObs <$> ntb)
+ppDualMono :: DualMono -> Doc a
+ppDualMono dm =
+  let ma = (dm ^. monoA)
+      mb = (dm ^. monoB)
+  in  ppMono ma
+        <> Pretty.hardline
+        <> ppMono mb
+        <> Pretty.hardline
+        <> ppListGen (ppDualS (ma ^. name) (mb ^. name) <$> (dm ^. obs))
+                     Pretty.hardline
 
-ppMonoSig :: (Mono, [Signature]) -> Doc a
-ppMonoSig (mono, sig) =
-  ppListBrac Pretty.parens (Pretty.pretty <$> mono)
-    <> Pretty.comma
-    <> ppListBrac Pretty.brackets (Pretty.pretty <$> sig)
+ppMono :: Monodromy -> Doc a
+ppMono mono =
+  pretty (mono ^. name)
+    <+> Pretty.equals
+    <+> ppRamy (mono ^. ramies)
+    <>  Pretty.comma
+    <+> ppSig (mono ^. signature)
+ where
+  ppRamy ramies = ppListBrac Pretty.parens (Pretty.pretty <$> ramies)
+  ppSig sig = ppListBrac Pretty.brackets (Pretty.pretty <$> sig)
 
-ppObs :: Newton -> Doc a
-ppObs (orb, slope) = Pretty.parens
-  (  ppListBrac Pretty.braces (Pretty.pretty <$> (S.toList orb))
+ppDualS :: Text -> Text -> DualS -> Doc a
+ppDualS na nb ds =
+  let pa = ds ^. par
+  in  "p"
+        <+> Pretty.equals
+        <+> ppList (Pretty.pretty <$> (pa ^. mods))
+        <>  Pretty.hardline
+        <>  pretty na
+        <>  Pretty.colon
+        <+> ppObs (pa ^. orbit) (ds ^. slopeA)
+        <>  Pretty.hardline
+        <>  pretty nb
+        <>  Pretty.colon
+        <+> ppObs (pa ^. orbit) (ds ^. slopeB)
+        <>  Pretty.hardline
+
+ppObs :: [Orbit] -> [Slope] -> Doc a
+ppObs []  _   = Pretty.emptyDoc
+ppObs _   []  = Pretty.emptyDoc
+ppObs [o] [s] = Pretty.parens
+  (  ppListBrac Pretty.braces (Pretty.pretty <$> (S.toList o))
   <> Pretty.comma
-  <> Pretty.pretty (show slope)
+  <> Pretty.pretty (show s)
   )
+ppObs (o : ox) (s : sx) = ppObs [o] [s] <> Pretty.comma <> ppObs ox sx
 
 ppListBrac :: (Doc a -> Doc a) -> [Doc a] -> Doc a
 ppListBrac f li = (f . Pretty.hcat) (intersperse Pretty.comma li)
