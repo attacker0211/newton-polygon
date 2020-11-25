@@ -4,8 +4,9 @@
 * Prerequisite: [cabal and ghc](https://www.haskell.org/ghcup/)
 
 ```
-git clone https://github.com/attacker0211/newton-polygon.git ~
+git clone https://github.com/attacker0211/newton-polygon.git ~ (or git pull origin master to update)
 cd newton-polygon
+cabal v2-install
 cabal v2-repl 
 ```
 ## Usage from repl
