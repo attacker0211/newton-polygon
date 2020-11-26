@@ -43,7 +43,7 @@ data DualS = DualS
 data DualMono = DualMono
   { _monoA :: Monodromy
   , _monoB :: Monodromy
-  , _obs   :: [DualS]
+  , _duals   :: [DualS]
   }
 
 $(makeLenses ''Monodromy)
@@ -85,15 +85,11 @@ qualifiedMonomies
   -> Int {-bound-}
   -> [(Monodromy, Monodromy)]
 qualifiedMonomies na nb sa sb bound = do
-  ra <- ramA
-  rb <- ramB
+  ra <- findRamyGen na bound sa
+  rb <- findRamyGen nb bound sb
   let ma = Monodromy "A" bound ra (sign bound ra <$> [1 .. (bound - 1)])
       mb = Monodromy "B" bound rb (sign bound rb <$> [1 .. (bound - 1)])
-  if valid ma mb then d ++ [(,) ma mb] else d
- where
-  ramA = findRamyGen na bound sa
-  ramB = findRamyGen nb bound sb
-  d    = []
+  if valid ma mb then return ( (,) ma mb ) else []
 
 valid :: Monodromy -> Monodromy -> Bool
 valid monoA monoB =
@@ -188,7 +184,7 @@ ppDualMono dm =
         <> Pretty.hardline
         <> ppMono mb
         <> Pretty.hardline
-        <> ppListGen (ppDualS (ma ^. name) (mb ^. name) <$> (dm ^. obs))
+        <> ppListGen (ppDualS (ma ^. name) (mb ^. name) <$> (dm ^. duals))
                      Pretty.hardline
 
 ppMono :: Monodromy -> Doc a
