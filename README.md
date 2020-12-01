@@ -13,4 +13,6 @@ cabal v2-repl
 ## Usage from repl
 * `ppNewton x`: pretty-print newton polygons of bound `x`
 * `ppNewtonL list`: pretty-print newton polygons of bounds from the `list`
-* `ppNewtonGen numbranchA numBranchB sumA sumB bound`: general case, default `numBranchA = 3, numBranchB = 4, sumA = bound, sumB = 2*bound`
+* `ppNewtonGen numbranchA numBranchB multiplicativeA multiplicativeA bound`: general case, default `numBranchA = 3, numBranchB = 4, sumA = bound, sumB = 2*bound`
+* `ppNewtonGenL numbranchA numBranchB multiplicativeA multiplicativeA list_of_bounds`: general case, default `numBranchA = 3, numBranchB = 4, sumA = bound*multiplicativeA, sumB = bound*multiplicativeB`
+
