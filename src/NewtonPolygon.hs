@@ -4,6 +4,8 @@ module NewtonPolygon
   ( qualifiedMonomies
   , ppNewton
   , ppNewtonL
+  , ppNewtonGen
+  , ppNewtonGenL
   ) where
 import           Data.List
 import qualified Data.MultiMap                 as MM
@@ -43,7 +45,7 @@ data DualS = DualS
 data DualMono = DualMono
   { _monoA :: Monodromy
   , _monoB :: Monodromy
-  , _duals   :: [DualS]
+  , _duals :: [DualS]
   }
 
 $(makeLenses ''Monodromy)
@@ -85,11 +87,11 @@ qualifiedMonomies
   -> Int {-bound-}
   -> [(Monodromy, Monodromy)]
 qualifiedMonomies na nb sa sb bound = do
-  ra <- findRamyGen na bound sa
-  rb <- findRamyGen nb bound sb
+  ra <- findRamyGen na bound (sa * bound)
+  rb <- findRamyGen nb bound (sb * bound)
   let ma = Monodromy "A" bound ra (sign bound ra <$> [1 .. (bound - 1)])
       mb = Monodromy "B" bound rb (sign bound rb <$> [1 .. (bound - 1)])
-  if valid ma mb then return ( (,) ma mb ) else []
+  if valid ma mb then return ((,) ma mb) else []
 
 valid :: Monodromy -> Monodromy -> Bool
 valid monoA monoB =
@@ -169,6 +171,16 @@ ppNewtonGen na nb sa sb b =
         <+> Pretty.pretty b
         <>  Pretty.hardline
         <>  ppListGen (ppDualMono <$> l) Pretty.hardline
+
+ppNewtonGenL
+  :: Int {-numbranchA-}
+  -> Int {-numbranchB-}
+  -> Int {-sumA-}
+  -> Int {-sumB-}
+  -> [Int] {-bound-}
+  -> Doc a
+ppNewtonGenL na nb sa sb bds =
+  ppListGen ((ppNewtonGen na nb sa sb) <$> bds) Pretty.hardline
 
 ppNewton :: Int -> Doc a
 ppNewton b = ppNewtonGen 3 4 b (2 * b) b
