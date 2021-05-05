@@ -24,7 +24,7 @@ common ntp-shared
 
 library ntp-core
   import: ntp-shared
-  exposed-modules: NewtonPolygon
+  exposed-modules: NewtonPolygon, NewtonPolygonGen
   hs-source-dirs:      src
 
 executable test
