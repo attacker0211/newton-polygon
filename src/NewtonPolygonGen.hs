@@ -46,19 +46,31 @@ ppNewton b = ppNewtonGen 3 4 b (2 * b) b
 ppNewtonL :: [Int] -> Doc a
 ppNewtonL bds = ppListGen (ppNewton <$> bds) Pretty.hardline
 
+ppNewtonMonoGen :: Int -> [Int] -> Doc a
+ppNewtonMonoGen b ramies =
+  let l = computeMono b ramies
+  in  "m =" <+> Pretty.pretty b <> Pretty.hardline <> ppMono l
+
 ppDualMono :: DualMono -> Doc a
 ppDualMono dm =
   let ma = (dm ^. monoA)
       mb = (dm ^. monoB)
-  in  ppMono ma
+  in  ppMonodromy ma
         <> Pretty.hardline
-        <> ppMono mb
+        <> ppMonodromy mb
         <> Pretty.hardline
         <> ppListGen (ppDualS (ma ^. name) (mb ^. name) <$> (dm ^. duals))
                      Pretty.hardline
 
-ppMono :: Monodromy -> Doc a
+ppMono :: Mono -> Doc a
 ppMono mono =
+  let mn = mono ^. monoM
+  in  ppMonodromy mn
+        <> Pretty.hardline
+        <> ppListGen (ppMonoS (mn ^. name) <$> (mono ^. monos)) Pretty.hardline
+
+ppMonodromy :: Monodromy -> Doc a
+ppMonodromy mono =
   pretty (mono ^. name)
     <+> Pretty.equals
     <+> ppRamy (mono ^. ramies)
@@ -75,14 +87,21 @@ ppDualS na nb ds =
         <+> Pretty.equals
         <+> ppList (Pretty.pretty <$> (pa ^. mods))
         <>  Pretty.hardline
-        <>  pretty na
-        <>  Pretty.colon
-        <+> ppObs (pa ^. orbits) (ds ^. slopeA)
+        <>  ppMonoSS na pa (ds ^. slopeA)
+        <>  ppMonoSS nb pa (ds ^. slopeB)
+
+ppMonoS :: Text -> MonoS -> Doc a
+ppMonoS nd ds =
+  let pa = ds ^. parM
+  in  "p"
+        <+> Pretty.equals
+        <+> ppList (Pretty.pretty <$> (pa ^. mods))
         <>  Pretty.hardline
-        <>  pretty nb
-        <>  Pretty.colon
-        <+> ppObs (pa ^. orbits) (ds ^. slopeB)
-        <>  Pretty.hardline
+        <>  ppMonoSS nd pa (ds ^. slopeM)
+
+ppMonoSS :: Text -> Partition -> [[(Slope, Int)]] -> Doc a
+ppMonoSS name pa slope =
+  pretty name <> Pretty.colon <+> ppObs (pa ^. orbits) slope <> Pretty.hardline
 
 ppObs :: [Orbit] -> [[(Slope, Int)]] -> Doc a
 ppObs [] _  = Pretty.emptyDoc

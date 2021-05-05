@@ -2,11 +2,14 @@
 
 module NewtonPolygon
   ( computeDualMono
+  , computeMono
   , qualifiedMonomies
   , Monodromy(..)
   , Partition(..)
   , DualS(..)
   , DualMono(..)
+  , MonoS(..)
+  , Mono(..)
   , Orbit
   , Slope
   , Signature
@@ -22,6 +25,10 @@ module NewtonPolygon
   , par
   , orbits
   , mods
+  , slopeM
+  , parM
+  , monoM
+  , monos
   ) where
 import           Control.Lens
 import           Control.Monad                  ( foldM )
@@ -60,10 +67,22 @@ data DualMono = DualMono
   , _duals :: [DualS]
   }
 
+data MonoS = MonoS
+  { _slopeM :: [[(Slope, Int)]]
+  , _parM   :: Partition
+  }
+
+data Mono = Mono
+  { _monoM :: Monodromy
+  , _monos :: [MonoS]
+  }
+
 $(makeLenses ''Monodromy)
 $(makeLenses ''Partition)
 $(makeLenses ''DualS)
 $(makeLenses ''DualMono)
+$(makeLenses ''MonoS)
+$(makeLenses ''Mono)
 
 extractFracPart :: Int -> Int -> Double
 extractFracPart denom num =
@@ -90,6 +109,9 @@ sign
   -> Int {-signature-}
 sign bound ramies n =
   (round . sum) ((extractFracPart bound) <$> (((*) (-n)) <$> ramies)) - 1
+
+signL :: Int -> [Int] -> Signature
+signL bound ramies = sign bound ramies <$> [1 .. (bound - 1)]
 
 qualifiedMonomies
   :: Int {-numbranchA-}
@@ -150,13 +172,14 @@ computeSlopeL m sig orb =
   in
     zip s ((* card) <$> dif)
 
+-- dual 
 computeDualS :: Monodromy -> Monodromy -> [Partition] -> [DualS]
 computeDualS ma mb partitions = do
   par <- partitions
   let orb = par ^. orbits
-      sup = ma ^. bound
-      sa  = computeSlopeL sup (ma ^. signature) <$> orb
-      sb  = computeSlopeL sup (mb ^. signature) <$> orb
+      b   = ma ^. bound
+      sa  = computeSlopeL b (ma ^. signature) <$> orb
+      sb  = computeSlopeL b (mb ^. signature) <$> orb
   return (DualS sa sb par)
 
 computeDualMono
@@ -170,3 +193,18 @@ computeDualMono na nb sa sb b = do
   (ma, mb) <- qualifiedMonomies na nb sa sb b
   return (DualMono ma mb (computeDualS ma mb partitions))
   where partitions = toPartition (partitionM b)
+
+-- not dual: used for inputing ramies
+computeMonoS :: Monodromy -> [Partition] -> [MonoS]
+computeMonoS mn partitions = do
+  par <- partitions
+  let orb = par ^. orbits
+      b   = mn ^. bound
+      sd  = computeSlopeL b (mn ^. signature) <$> orb
+  return (MonoS sd par)
+
+computeMono :: Int -> [Int] -> Mono
+computeMono b ramies =
+  let partitions = toPartition (partitionM b)
+      mn         = Monodromy "D" b ramies (signL b ramies)
+  in  Mono mn (computeMonoS mn partitions)
