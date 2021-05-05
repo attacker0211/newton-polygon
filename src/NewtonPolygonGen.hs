@@ -1,6 +1,7 @@
 module NewtonPolygonGen
   ( ppNewtonGen
   , ppNewtonGenL
+  , ppNewtonMonoGen
   , ppNewton
   , ppNewtonL
   , ppDualMono
