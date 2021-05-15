@@ -5,9 +5,9 @@ module NewtonPolygonGen
   , ppNewton
   , ppNewtonL
   , ppDualMono
+  , ppMonodromy
   ) where
 import           Control.Lens
-import           Data.List
 import qualified Data.Set                      as S
 import           Data.Text                      ( Text )
 import           Data.Text.Prettyprint.Doc      ( (<+>)
@@ -15,6 +15,7 @@ import           Data.Text.Prettyprint.Doc      ( (<+>)
                                                 , Pretty(..)
                                                 )
 import qualified Data.Text.Prettyprint.Doc     as Pretty
+import           GenUtils
 import           NewtonPolygon
 
 ppNewtonGen
@@ -119,15 +120,3 @@ ppObs (o : ox) (s : sx) = ppObs [o] [s] <> Pretty.hardline <> ppObs ox sx
 ppSlope :: (Slope, Int) -> Doc a
 ppSlope (s, mul) = Pretty.parens
   (Pretty.pretty (show s) <> Pretty.comma <> Pretty.space <> Pretty.pretty mul)
-
-ppListBracSep :: Doc a -> (Doc a -> Doc a) -> [Doc a] -> Doc a
-ppListBracSep sep f li = (f . Pretty.hcat) (intersperse sep li)
-
-ppListBrac :: (Doc a -> Doc a) -> [Doc a] -> Doc a
-ppListBrac f li = ppListBracSep Pretty.comma f li
-
-ppList :: [Doc a] -> Doc a
-ppList li = ppListGen li Pretty.comma
-
-ppListGen :: [Doc a] -> Doc a -> Doc a
-ppListGen li sep = (Pretty.hcat (intersperse sep li))

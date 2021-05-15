@@ -17,6 +17,8 @@ module NewtonPolygon
   , bound
   , ramies
   , signature
+  , sign
+  , signL
   , monoA
   , monoB
   , duals
@@ -49,6 +51,14 @@ data Monodromy = Monodromy
   , _ramies    :: [Int] -- ^ content of monodromy
   , _signature :: [Int] -- ^ signature of monodromy: len list (bound-1)
   }
+
+instance Eq Monodromy where
+  Monodromy n1 b1 r1 s1 == Monodromy n2 b2 r2 s2 =
+    n1 == n2 && b1 == b2 && r1 == r2 && s1 == s2
+
+instance Ord Monodromy where
+  Monodromy _ b1 r1 _ `compare` Monodromy _ b2 r2 _ =
+    b1 `compare` b2 <> r1 `compare` r2
 
 data Partition = Partition
   { _orbits :: [Orbit]

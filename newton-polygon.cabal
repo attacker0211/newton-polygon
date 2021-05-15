@@ -17,14 +17,14 @@ category:            Math
 extra-source-files:  CHANGELOG.md
 
 common ntp-shared
-  build-depends: base >= 4.12, containers >= 0.6, multimap >= 1.2, prettyprinter >= 1.5.1, text >= 1.2, lens >= 4.19
+  build-depends: base >= 4.12, containers >= 0.6, multimap >= 1.2, prettyprinter >= 1.5.1, text >= 1.2, lens >= 4.19, diagrams
   default-language: Haskell2010
   default-extensions: BangPatterns, OverloadedStrings, FlexibleInstances, FlexibleContexts
   ghc-options: -Wall -Wmissing-exported-signatures -fno-warn-name-shadowing
 
 library ntp-core
   import: ntp-shared
-  exposed-modules: NewtonPolygonGen, NewtonPolygon
+  exposed-modules: NewtonPolygonGen, NewtonPolygon, Degenerate, DegenerateGen, GenUtils
   hs-source-dirs:      src
 
 executable test
