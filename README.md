@@ -19,5 +19,5 @@ cabal v2-repl
 * Degenerate Type:
 ```
 :l DegenerateGen
-genDeg bound ramies
+ppDeg bound ramies
 ```
